@@ -13,31 +13,23 @@ const Message = ({ message }) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Display loading animation for messages that are being processed
-  if (loading) {
-    return (
-      <div className={messageClassName}>
-        <div className="message-content">
+  return (
+    <div className={messageClassName}>
+      <div className="message-content">
+        {loading ? (
           <div className="typing-indicator">
             <span></span>
             <span></span>
             <span></span>
           </div>
-        </div>
-        <div className="message-meta">
-          <span className="message-sender">AI</span>
-          <span className="message-time">{formatTime(createdAt)}</span>
-        </div>
+        ) : (
+          text
+        )}
       </div>
-    );
-  }
-
-  return (
-    <div className={messageClassName}>
-      <div className="message-content">{text}</div>
       <div className="message-meta">
         <span className="message-sender">{sender === 'user' ? 'You' : 'AI'}</span>
         <span className="message-time">{formatTime(createdAt)}</span>
+        {loading && <span className="message-status">Loading...</span>}
       </div>
     </div>
   );

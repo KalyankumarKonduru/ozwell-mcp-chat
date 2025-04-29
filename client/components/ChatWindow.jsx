@@ -6,6 +6,8 @@ import Message from './Message';
 
 const ChatWindow = () => {
   const messagesEndRef = useRef(null);
+  
+  // Subscribe to messages collection with reactive updates
   const { messages, isLoading } = useTracker(() => {
     const subscription = Meteor.subscribe('messages');
     const messages = Messages.find({}, { sort: { createdAt: 1 } }).fetch();
@@ -15,6 +17,8 @@ const ChatWindow = () => {
       isLoading: !subscription.ready()
     };
   });
+
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });

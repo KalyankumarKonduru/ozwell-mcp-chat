@@ -21,48 +21,62 @@ Meteor.methods({
       userId: this.userId || 'anonymous',
       createdAt: new Date()
     });
+
+    // Create a unique conversation ID to track this specific request
+    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
     // Insert a placeholder for AI response with loading status
     const loadingMessageId = await Messages.insertAsync({
       text: 'Thinking...',
       sender: 'bot',
       loading: true,
+      conversationId,
       createdAt: new Date()
     });
     
-    try {
-      // Get response from Ozwell AI through our MCP client
-      const aiResponse = await mcpClient.sendMessage(text);
-      
-      // Update the placeholder message with the actual AI response
-      await Messages.updateAsync(
-        { _id: loadingMessageId },
-        { 
-          $set: {
-            text: aiResponse.text,
-            metadata: aiResponse.metadata,
-            loading: false
+    // Run the AI call outside the method's future to avoid blocking
+    Promise.resolve().then(async () => {
+      try {
+        // Get response from Ozwell AI through our MCP client
+        const aiResponse = await mcpClient.sendMessage(text, {
+          includeHistory: true,
+          messagesCollection: Messages
+        });
+        
+        // Update the placeholder message with the actual AI response
+        await Messages.updateAsync(
+          { _id: loadingMessageId },
+          { 
+            $set: {
+              text: aiResponse.text,
+              metadata: aiResponse.metadata || {},
+              loading: false,
+              completed: true
+            }
           }
-        }
-      );
-      
-      return userMessageId;
-    } catch (error) {
-      // Update message with error information
-      await Messages.updateAsync(
-        { _id: loadingMessageId },
-        { 
-          $set: {
-            text: `Sorry, I encountered an error: ${error.reason || error.message || 'Unknown error'}`,
-            error: true,
-            loading: false
+        );
+      } catch (error) {
+        console.error('Error getting AI response:', error);
+        
+        // Update message with error information
+        await Messages.updateAsync(
+          { _id: loadingMessageId },
+          { 
+            $set: {
+              text: `Sorry, I encountered a problem. ${error.reason || error.message || 'Please try again later.'}`,
+              error: true,
+              loading: false,
+              completed: true
+            }
           }
-        }
-      );
-      
-      // Rethrow the error for the client to handle
-      throw error;
-    }
+        );
+      }
+    }).catch(error => {
+      console.error('Unhandled promise rejection in messages.insert method:', error);
+    });
+    
+    // Return the user message ID immediately to unblock the client
+    return userMessageId;
   },
   
   async 'messages.clear'() {

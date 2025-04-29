@@ -1,19 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Meteor } from 'meteor/meteor';
 import { useTracker } from 'meteor/react-meteor-data';
 import { Messages } from '/imports/api/messages';
 
-const MessageInput = ({ onSendMessage }) => {
+const MessageInput = ({ onSendMessage, isSending }) => {
   const [message, setMessage] = useState('');
-  const [isSending, setIsSending] = useState(false);
-
-  // Check if any message is in loading state
-  const { isLoading } = useTracker(() => {
+  const inputRef = useRef(null);
+  
+  // Track loading messages more reliably
+  const { isProcessing } = useTracker(() => {
+    // Find any message that's currently loading
     const loadingMessages = Messages.find({ loading: true }).fetch();
     return {
-      isLoading: loadingMessages.length > 0
+      isProcessing: loadingMessages.length > 0
     };
   });
+
+  // Focus the input field when the component mounts
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+
+  // Also focus after a message is sent
+  useEffect(() => {
+    if (!isProcessing && !isSending && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isProcessing, isSending]);
 
   const handleInputChange = (e) => {
     setMessage(e.target.value);
@@ -22,23 +37,14 @@ const MessageInput = ({ onSendMessage }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    if (!message.trim() || isSending || isLoading) return;
+    if (!message.trim() || isProcessing || isSending) return;
     
-    setIsSending(true);
-    
-    // Send the message
+    // Send the message through the parent component
     onSendMessage(message);
     
-    // Clear the input
+    // Clear the input right away
     setMessage('');
   };
-
-  // Reset sending state when loading state changes
-  useEffect(() => {
-    if (!isLoading) {
-      setIsSending(false);
-    }
-  }, [isLoading]);
 
   const handleKeyPress = (e) => {
     // Submit on Enter key (without Shift)
@@ -51,20 +57,21 @@ const MessageInput = ({ onSendMessage }) => {
   return (
     <form className="message-input-container" onSubmit={handleSubmit}>
       <input
+        ref={inputRef}
         type="text"
         className="message-input"
-        placeholder={isLoading ? "AI is thinking..." : "Type your message..."}
+        placeholder={isProcessing ? "AI is thinking..." : "Type your message..."}
         value={message}
         onChange={handleInputChange}
         onKeyPress={handleKeyPress}
-        disabled={isSending || isLoading}
+        disabled={isProcessing || isSending}
       />
       <button 
         type="submit" 
         className="send-button"
-        disabled={!message.trim() || isSending || isLoading}
+        disabled={!message.trim() || isProcessing || isSending}
       >
-        {isSending || isLoading ? 'Sending...' : 'Send'}
+        {isProcessing ? 'Thinking...' : isSending ? 'Sending...' : 'Send'}
       </button>
     </form>
   );
