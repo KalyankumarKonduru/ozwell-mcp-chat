@@ -1,0 +1,8 @@
+{
+    "public": {
+      "ozwellApiUrl": "https://ai.bluehive.com/api"
+    },
+    "private": {
+      "ozwellApiKey": "BHSK-sandbox-FC5AWzqhZWwJvJqznpYYHVazREF0wKDL_BQL1vk_"
+    }
+  }
