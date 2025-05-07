@@ -3,88 +3,96 @@ import axios from 'axios';
 
 class MCPClient {
   constructor() {
-    // The endpoint should be configured in settings
     this.apiUrl = Meteor.settings.public.ozwellApiUrl || 'https://ai.bluehive.com/api';
     this.apiKey = Meteor.settings.private?.ozwellApiKey || '';
-    this._pendingRequest = false;
   }
 
   async sendMessage(message, options = {}) {
-    // Prevent multiple concurrent requests
-    if (this._pendingRequest) {
-      console.warn('Another request is already in progress');
-      await this._waitForPendingRequest();
-    }
-    
-    this._pendingRequest = true;
-    
     try {
-      // Prepare the request to BlueHive API
-      const payload = {
+      console.log(`MCPClient: Sending message "${message}"`);
+      console.log('Options:', JSON.stringify(options));
+      
+      let payload = {
         prompt: message,
         systemMessage: "You are a helpful chatbot named Will."
       };
-
-      console.log('Sending request to API:', this.apiUrl);
       
-      // Make the API request with Bearer token authentication
+      // Handle customHistory parameter directly
+      if (options.customHistory && Array.isArray(options.customHistory) && options.customHistory.length > 0) {
+        console.log(`Using ${options.customHistory.length} messages from history`);
+        
+        // Filter out any problematic messages
+        const filteredHistory = options.customHistory.filter(msg => 
+          msg && msg.role && msg.content && 
+          (msg.role === 'user' || msg.role === 'assistant') &&
+          typeof msg.content === 'string' && 
+          msg.content.trim() !== ''
+        );
+        
+        if (filteredHistory.length > 0) {
+          payload.history = filteredHistory;
+        }
+      }
+      
+      console.log('Sending payload to AI service:', JSON.stringify(payload));
+
       const response = await axios.post(`${this.apiUrl}/v1/completion`, payload, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        // Add timeout to prevent hanging requests
-        timeout: 30000
+        timeout: 30000 // 30 seconds timeout
       });
-
-      console.log('Response received:', response.status);
       
-      // Reset pending request flag
-      this._pendingRequest = false;
-      
-      // Return the AI response
       if (response.data && response.data.choices && response.data.choices.length > 0) {
+        console.log('Received AI response successfully');
+        const responseText = response.data.choices[0].message.content;
+        console.log('AI Response text:', responseText);
         return {
-          text: response.data.choices[0].message.content,
+          text: responseText,
           metadata: {
             logId: response.data.logId,
-            status: response.data.status
+            status: response.data.status,
+            timestamp: new Date().toISOString()
           }
         };
       } else {
-        throw new Error('Invalid response format from BlueHive AI');
+        console.log('Invalid response format:', JSON.stringify(response.data));
+        throw new Error('Invalid response format from AI service');
       }
     } catch (error) {
-      // Reset pending request flag even on error
-      this._pendingRequest = false;
-      
       console.error('MCP Client Error:', error);
       
-      // Create a user-friendly error message
       let errorMessage = 'Error communicating with AI service';
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
         errorMessage = `Server error: ${error.response.status}`;
         if (error.response.data && error.response.data.error) {
           errorMessage += ` - ${error.response.data.error.message || error.response.data.error}`;
         }
       } else if (error.request) {
-        // The request was made but no response was received
         errorMessage = 'No response from AI service. Please check your network connection.';
       } else {
-        // Something happened in setting up the request that triggered an Error
         errorMessage = error.message || 'Unknown error during request setup';
       }
 
-      // For development, we'll simulate a response while setting up real API access
-      if (Meteor.isDevelopment && !this.apiKey) {
-        console.warn('Using simulated AI response in development mode (no API key provided)');
+      // Development mode fallback
+      if (Meteor.isDevelopment) {
+        console.warn('Using simulated AI response in development mode');
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Create a simple response that acknowledges the message
+        let responseText = `I'm responding to your message: "${message}"`;
+        
+        // Add context if history is provided
+        if (payload.history && payload.history.length > 0) {
+          responseText += `. Based on our conversation, I understand we're discussing ${message}.`;
+        }
+        
         return {
-          text: `I'm a simulated AI response. You said: "${message}"`,
+          text: responseText,
           metadata: {
-            model: 'simulated-model',
-            simulated: true
+            simulated: true,
+            timestamp: new Date().toISOString()
           }
         };
       }
@@ -92,19 +100,6 @@ class MCPClient {
       throw new Meteor.Error('mcp-client-error', errorMessage);
     }
   }
-  
-  // Helper method to wait for pending request to complete
-  async _waitForPendingRequest() {
-    return new Promise(resolve => {
-      const checkInterval = setInterval(() => {
-        if (!this._pendingRequest) {
-          clearInterval(checkInterval);
-          resolve();
-        }
-      }, 100);
-    });
-  }
 }
 
-// Create a singleton instance
 export const mcpClient = new MCPClient();

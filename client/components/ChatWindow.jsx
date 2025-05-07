@@ -1,32 +1,61 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Meteor } from 'meteor/meteor';
-import { useTracker } from 'meteor/react-meteor-data';
-import { Messages } from '/imports/api/messages';
 import Message from './Message';
 
 const ChatWindow = () => {
-  const messagesEndRef = useRef(null);
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   
-  // Subscribe to messages collection with reactive updates
-  const { messages, isLoading } = useTracker(() => {
-    const subscription = Meteor.subscribe('messages');
-    const messages = Messages.find({}, { sort: { createdAt: 1 } }).fetch();
-    
-    return {
-      messages,
-      isLoading: !subscription.ready()
-    };
-  });
-
-  // Auto-scroll to bottom when new messages arrive
+  // Function to load messages
+  const loadMessages = () => {
+    Meteor.call('messages.getAll', (error, result) => {
+      if (error) {
+        console.error('Error fetching messages:', error);
+      } else {
+        console.log(`Loaded ${result.length} messages`, result);
+        setMessages(result);
+        setIsLoading(false);
+        
+        // Scroll to bottom after messages load
+        setTimeout(() => {
+          const chatWindow = document.querySelector('.chat-window');
+          if (chatWindow) {
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+          }
+        }, 100);
+      }
+    });
+  };
+  
+  // Initial load and polling
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
-
+    loadMessages();
+    
+    // Poll for new messages every second
+    const interval = setInterval(() => {
+      loadMessages();
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+  
+  // Manual refresh handler
+  const handleRefresh = () => {
+    loadMessages();
+  };
+  
   return (
     <div className="chat-window">
+      <div style={{padding: '5px', fontSize: '12px', color: '#888'}}>
+        Messages: {messages.length}
+        <button 
+          onClick={handleRefresh}
+          style={{marginLeft: '10px', fontSize: '10px', padding: '2px 5px'}}
+        >
+          Refresh
+        </button>
+      </div>
+      
       {isLoading ? (
         <div className="loading">Loading messages...</div>
       ) : messages.length === 0 ? (
@@ -34,14 +63,13 @@ const ChatWindow = () => {
           <p>No messages yet. Start a conversation!</p>
         </div>
       ) : (
-        messages.map(message => (
+        messages.map((message) => (
           <Message 
             key={message._id}
             message={message}
           />
         ))
       )}
-      <div ref={messagesEndRef} />
     </div>
   );
 };

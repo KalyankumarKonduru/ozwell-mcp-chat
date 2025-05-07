@@ -21,73 +21,113 @@ Meteor.methods({
       userId: this.userId || 'anonymous',
       createdAt: new Date()
     });
-
-    // Create a unique conversation ID to track this specific request
-    const conversationId = `conv_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     
-    // Insert a placeholder for AI response with loading status
-    const loadingMessageId = await Messages.insertAsync({
-      text: 'Thinking...',
-      sender: 'bot',
-      loading: true,
-      conversationId,
-      createdAt: new Date()
-    });
+    console.log(`User message inserted with ID: ${userMessageId}`);
     
-    // Run the AI call outside the method's future to avoid blocking
-    Promise.resolve().then(async () => {
-      try {
-        // Get response from Ozwell AI through our MCP client
-        const aiResponse = await mcpClient.sendMessage(text, {
-          includeHistory: true,
-          messagesCollection: Messages
-        });
-        
-        // Update the placeholder message with the actual AI response
-        await Messages.updateAsync(
-          { _id: loadingMessageId },
-          { 
-            $set: {
-              text: aiResponse.text,
-              metadata: aiResponse.metadata || {},
-              loading: false,
-              completed: true
+    // Handle the AI response as a separate asynchronous process
+    if (Meteor.isServer) {
+      // Use Promise to handle async operations outside of Meteor's reactivity
+      Promise.resolve().then(async () => {
+        try {
+          // IMPORTANT: Get ALL previous messages to maintain conversation context
+          // This is what ensures proper follow-up responses
+          const previousMessages = await Messages.find(
+            {}, // No filters - get all messages
+            { 
+              sort: { createdAt: 1 }, // Sort by time ascending to maintain conversation flow
+              // No limit - get the full conversation history
             }
-          }
-        );
-      } catch (error) {
-        console.error('Error getting AI response:', error);
-        
-        // Update message with error information
-        await Messages.updateAsync(
-          { _id: loadingMessageId },
-          { 
-            $set: {
-              text: `Sorry, I encountered a problem. ${error.reason || error.message || 'Please try again later.'}`,
-              error: true,
-              loading: false,
-              completed: true
-            }
-          }
-        );
-      }
-    }).catch(error => {
-      console.error('Unhandled promise rejection in messages.insert method:', error);
-    });
+          ).fetchAsync();
+          
+          console.log(`Found ${previousMessages.length} total messages for context`);
+          
+          // Format history for AI service
+          const history = previousMessages.map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.text
+          }));
+          
+          // Log the full conversation history being sent
+          console.log("Full conversation history being sent to AI:");
+          history.forEach((msg, i) => {
+            console.log(`[${i}] ${msg.role}: ${msg.content.substring(0, 30)}...`);
+          });
+          
+          // Get AI response
+          console.log("Requesting AI response with full conversation history...");
+          const aiResponse = await mcpClient.sendMessage(text, {
+            includeHistory: false,
+            customHistory: history
+          });
+          
+          console.log(`AI response received: "${aiResponse.text}"`);
+          
+          // Insert bot response as a new message
+          const botMessageId = await Messages.insertAsync({
+            text: aiResponse.text,
+            sender: 'bot',
+            loading: false,
+            completed: true,
+            metadata: aiResponse.metadata || {},
+            createdAt: new Date()
+          });
+          
+          console.log(`AI response inserted with ID: ${botMessageId}`);
+        } catch (error) {
+          console.error('Error getting AI response:', error);
+          
+          // Insert error message
+          await Messages.insertAsync({
+            text: `Sorry, I encountered a problem: ${error.reason || error.message || 'Unknown error'}`,
+            sender: 'bot',
+            error: true,
+            createdAt: new Date()
+          });
+        }
+      }).catch(error => {
+        console.error('Promise rejection in messages.insert:', error);
+      });
+    }
     
-    // Return the user message ID immediately to unblock the client
+    // Return the user message ID immediately
     return userMessageId;
   },
   
+  async 'messages.getAll'() {
+    console.log('Executing messages.getAll method...');
+    try {
+      const allMessages = await Messages.find({}, { 
+        sort: { createdAt: 1 }
+      }).fetchAsync();
+      
+      console.log(`Returning ${allMessages.length} messages to client`);
+      return allMessages;
+    } catch (error) {
+      console.error('Error fetching all messages:', error);
+      throw new Meteor.Error('fetch-failed', 'Failed to fetch messages: ' + error.message);
+    }
+  },
+  
   async 'messages.clear'() {
-    // Clear all messages (for testing/development)
-    await Messages.removeAsync({});
+    // Clear all messages
+    console.log('Executing messages.clear method...');
+    try {
+      const result = await Messages.removeAsync({});
+      console.log(`Removed ${result} messages from collection`);
+      return result;
+    } catch (error) {
+      console.error('Error clearing messages:', error);
+      throw new Meteor.Error('clear-failed', 'Failed to clear messages: ' + error.message);
+    }
   }
 });
 
 // Publish messages to the client
 if (Meteor.isServer) {
   Meteor.publish('messages', function () {
-    return Messages.find({}, { sort: { createdAt: 1 } });
+    console.log('Publishing messages to client...');
+    return Messages.find({}, { 
+      sort: { createdAt: 1 }
+    });
   });
 }
