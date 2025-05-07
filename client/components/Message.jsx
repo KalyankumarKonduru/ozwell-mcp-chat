@@ -1,3 +1,4 @@
+// client/components/Message.jsx
 import React, { useState } from 'react';
 
 const Message = ({ message }) => {
@@ -16,18 +17,6 @@ const Message = ({ message }) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Format MCP data for display
-  const formatMcpData = (data) => {
-    if (!data) return null;
-    
-    try {
-      return JSON.stringify(data, null, 2);
-    } catch (error) {
-      console.error('Error formatting MCP data:', error);
-      return 'Error formatting MCP data';
-    }
-  };
-  
   // Toggle expanded view for MCP data
   const toggleExpanded = () => {
     setIsExpanded(!isExpanded);
@@ -73,6 +62,25 @@ const Message = ({ message }) => {
       default: return '🔧';
     }
   };
+  
+  // Get icon for document type
+  const getDocTypeIcon = (docType) => {
+    switch (docType?.toLowerCase()) {
+      case 'resume': return '📝';
+      case 'patient': return '🏥';
+      case 'financial': return '💰';
+      case 'research': return '🔬';
+      case 'report': return '📊';
+      case 'business_plan': return '📈';
+      case 'research_paper': return '📚';
+      case 'legal': return '⚖️';
+      case 'presentation': return '🎯';
+      case 'letter': return '✉️';
+      case 'invoice': return '🧾';
+      case 'manual': return '📙';
+      default: return '📃';
+    }
+  };
 
   // Regular message with potential MCP data
   return (
@@ -91,25 +99,92 @@ const Message = ({ message }) => {
           
           {isExpanded && (
             <div className="message-mcp-data-content">
+              {/* Display sections if available */}
+              {mcpData.sections && mcpData.sections.length > 0 && (
+                <div className="document-sections">
+                  <div className="section-header">Document Sections:</div>
+                  <div className="section-list">
+                    {mcpData.sections.map((section, idx) => (
+                      <div key={idx} className="section-item">
+                        <span className="section-name">{section}</span>
+                        {mcpData.previews && mcpData.previews[section] && (
+                          <div className="section-preview">
+                            {mcpData.previews[section]}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Display specific section content if available */}
+              {mcpData.sectionName && mcpData.sectionContent && (
+                <div className="section-content">
+                  <div className="section-content-header">
+                    <span className="section-icon">📑</span>
+                    {mcpData.sectionName.charAt(0).toUpperCase() + mcpData.sectionName.slice(1)}
+                  </div>
+                  <div className="section-content-body">
+                    {mcpData.sectionContent.split('\n').map((line, idx) => (
+                      <div key={idx} className="content-line">
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Display full document text if available */}
+              {mcpData.fullText && (
+                <div className="full-text-content">
+                  <div className="full-text-header">Document Text</div>
+                  <div className="full-text-body">
+                    {mcpData.fullText.split('\n').map((line, idx) => (
+                      <div key={idx} className="content-line">
+                        {line}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Display document list */}
               {mcpData.results && mcpData.results.length > 0 ? (
                 <div className="results-container">
                   <div className="results-summary">
-                    Found {mcpData.results.length} {mcpData.results.length === 1 ? 'result' : 'results'} for query: "{mcpData.query}"
+                    Found {mcpData.results.length} {mcpData.results.length === 1 ? 'result' : 'results'}
+                    {mcpData.query && <span> for query: "{mcpData.query}"</span>}
                   </div>
                   
                   <div className="results-list">
                     {mcpData.results.map((result, idx) => (
                       <div key={idx} className="result-item">
                         <div className="result-type">
-                          {getToolIcon(result.documentType)} 
-                          {result.documentType.charAt(0).toUpperCase() + result.documentType.slice(1)}
+                          {getDocTypeIcon(result.documentType)} 
+                          {result.documentType ? (result.documentType.charAt(0).toUpperCase() + result.documentType.slice(1)) : 'Document'}
                         </div>
                         
                         <div className="result-filename">
                           {result.filename}
                         </div>
                         
-                        {result.preview && (
+                        {result.extractedContent && (
+                          <div className="result-extracted-content">
+                            <div className="extracted-content-header">
+                              {result.extractedSection ? `${result.extractedSection} Section` : 'Extracted Content'}
+                            </div>
+                            <div className="extracted-content-body">
+                              {result.extractedContent.split('\n').map((line, lineIdx) => (
+                                <div key={lineIdx} className="content-line">
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {result.preview && !result.extractedContent && (
                           <div className="result-preview">
                             {result.preview}
                           </div>

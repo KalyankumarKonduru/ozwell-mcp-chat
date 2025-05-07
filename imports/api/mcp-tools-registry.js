@@ -67,70 +67,112 @@ export const mcpTools = {
     },
     
     // Handle requests for PDF content
-    async handlePdfContentRequest(prompt, context = {}) {
-      console.log('Handling PDF content request:', prompt);
+// Handler function within mcp-tools-registry.js for processing document content
+
+// Handle requests for PDF content
+async handlePdfContentRequest(prompt, context = {}) {
+    console.log('Handling PDF content request:', prompt);
+    
+    // First, find the most recent PDF document
+    const recentDocs = await this.getMostRecentDocuments(1);
+    
+    if (!recentDocs || recentDocs.length === 0) {
+      return {
+        success: false,
+        message: 'No documents found'
+      };
+    }
+    
+    // Get the document
+    const doc = recentDocs[0];
+    console.log(`Found document: ${doc.filename}`);
+    
+    // Check if it's a PDF or other supported document type
+    const isPdf = doc.mimeType?.includes('pdf') || 
+                 doc.filename?.toLowerCase().endsWith('.pdf') ||
+                 (doc.content && typeof doc.content === 'string' && 
+                  doc.content.startsWith('data:application/pdf;base64,'));
+    
+    if (!isPdf) {
+      return {
+        success: false,
+        message: `The document "${doc.filename}" is not a PDF or supported document type.`
+      };
+    }
+    
+    try {
+      // Parse the query to understand what section or content is being requested
+      const promptLower = prompt.toLowerCase();
+      let sectionName = null;
       
-      // First, find the most recent PDF document
-      const recentDocs = await this.getMostRecentDocuments(1);
-      
-      if (!recentDocs || recentDocs.length === 0) {
-        return {
-          success: false,
-          message: 'No documents found'
-        };
+      // Check for common section requests
+      if (promptLower.includes('skill')) {
+        sectionName = 'skills';
+      } else if (promptLower.includes('experience') || promptLower.includes('work history')) {
+        sectionName = 'experience';
+      } else if (promptLower.includes('education') || promptLower.includes('academic')) {
+        sectionName = 'education';
+      } else if (promptLower.includes('summary') || promptLower.includes('profile')) {
+        sectionName = 'summary';
+      } else if (promptLower.includes('certification')) {
+        sectionName = 'certifications';
+      } else if (promptLower.includes('project')) {
+        sectionName = 'projects';
+      } else if (promptLower.match(/(?:from|in|of)\s+(?:the)?\s+(\w+)(?:\s+section)?/i)) {
+        // Extract section name from query like "content from the X section"
+        const match = promptLower.match(/(?:from|in|of)\s+(?:the)?\s+(\w+)(?:\s+section)?/i);
+        sectionName = match[1];
+      } else if (promptLower.match(/(?:find|get|extract|show|display)\s+(?:the)?\s+(\w+)(?:\s+section)?/i)) {
+        // Extract section name from query like "find the X section"
+        const match = promptLower.match(/(?:find|get|extract|show|display)\s+(?:the)?\s+(\w+)(?:\s+section)?/i);
+        sectionName = match[1];
       }
       
-      // Get the document
-      const doc = recentDocs[0];
-      
-      // Check if it's a PDF
-      const isPdf = doc.mimeType?.includes('pdf') || 
-                   doc.filename?.toLowerCase().endsWith('.pdf') ||
-                   (doc.content && typeof doc.content === 'string' && 
-                    doc.content.startsWith('data:application/pdf;base64,'));
-      
-      if (!isPdf) {
-        return {
-          success: false,
-          message: 'The most recent document is not a PDF'
-        };
-      }
-      
-      try {
-        // Extract the relevant section
-        let sectionName = 'skills';
+      // If we don't have a specific section request, identify sections first
+      if (!sectionName) {
+        console.log('No specific section requested, identifying available sections');
         
-        // Check if we're looking for a specific section
-        const sectionMatches = [
-          prompt.match(/(?:find|get|extract|show|display)\s+(?:the)?\s+(\w+)(?:\s+section)?/i),
-          prompt.match(/(?:from|in)\s+(?:the)?\s+(\w+)(?:\s+section)?/i)
-        ].filter(Boolean);
+        const sectionsResult = await Meteor.callAsync('pdf.identifySections', doc.content);
         
-        if (sectionMatches.length > 0) {
-          // Use the first match
-          const possibleSection = sectionMatches[0][1].toLowerCase();
+        if (sectionsResult.success && sectionsResult.sections.length > 0) {
+          return {
+            success: true,
+            documents: [doc],
+            count: 1,
+            message: `I found these sections in the document "${doc.filename}": ${sectionsResult.sections.join(', ')}`,
+            sections: sectionsResult.sections,
+            previews: sectionsResult.previews,
+            documentType: sectionsResult.documentType
+          };
+        } else {
+          // If no sections found, extract all text
+          console.log('No sections identified, extracting full text');
+          const extractResult = await Meteor.callAsync('pdf.extract', doc.content);
           
-          // Common sections
-          const validSections = [
-            'skills', 'experience', 'education', 'summary', 
-            'contact', 'projects', 'certifications', 'languages'
-          ];
-          
-          if (validSections.includes(possibleSection)) {
-            sectionName = possibleSection;
+          if (extractResult.success) {
+            return {
+              success: true,
+              documents: [
+                {
+                  ...doc,
+                  extractedContent: extractResult.text.substring(0, 2000) + 
+                                   (extractResult.text.length > 2000 ? '...' : '')
+                }
+              ],
+              count: 1,
+              message: `I extracted text from the document "${doc.filename}"`,
+              fullText: extractResult.text.substring(0, 2000) + 
+                       (extractResult.text.length > 2000 ? '...' : '')
+            };
           }
         }
+      } else {
+        // Extract the specific requested section
+        console.log(`Extracting "${sectionName}" section from PDF`);
         
-        console.log(`Extracting ${sectionName} section from PDF`);
+        const result = await Meteor.callAsync('pdf.extractSection', doc.content, sectionName);
         
-        // Get the PDF content
-        const pdfContent = doc.content;
-        
-        // Extract the section
-        const result = await Meteor.callAsync('pdf.extractSection', pdfContent, sectionName);
-        
-        if (result.success && result.content) {
-          // Return the results
+        if (result.success) {
           return {
             success: true,
             documents: [
@@ -142,58 +184,37 @@ export const mcpTools = {
             ],
             count: 1,
             sectionName: sectionName,
-            sectionContent: result.content
+            sectionContent: result.content,
+            message: `I found the "${sectionName}" section in the document "${doc.filename}"`
           };
         } else {
-          // Try to identify sections
-          const sectionsResult = await Meteor.callAsync('pdf.identifySections', pdfContent);
+          // If section extraction failed, try identifying sections
+          const sectionsResult = await Meteor.callAsync('pdf.identifySections', doc.content);
           
           if (sectionsResult.success && sectionsResult.sections.length > 0) {
             return {
               success: true,
               documents: [doc],
               count: 1,
-              message: `I found these sections in the document: ${sectionsResult.sections.join(', ')}`,
+              message: `I couldn't find a section called "${sectionName}", but I found these sections: ${sectionsResult.sections.join(', ')}`,
               sections: sectionsResult.sections,
               previews: sectionsResult.previews
             };
           }
-          
-          // Fallback: extract all text
-          const extractResult = await Meteor.callAsync('pdf.extract', pdfContent);
-          
-          if (extractResult.success) {
-            return {
-              success: true,
-              documents: [
-                {
-                  ...doc,
-                  extractedContent: extractResult.text
-                }
-              ],
-              count: 1,
-              message: 'I extracted the full text from the document',
-              fullText: extractResult.text
-            };
-          }
         }
-      } catch (error) {
-        console.error('Error processing PDF content request:', error);
       }
-      
-      // Fallback response
-      return {
-        success: false,
-        documents: [doc],
-        count: 1,
-        message: 'I found the document but could not extract the requested content'
-      };
-    },
+    } catch (error) {
+      console.error('Error processing document content request:', error);
+    }
     
-    async storeDocument(document) {
-      console.log(`Storing document via document storage: ${document.filename}`);
-      return await DocumentStorage.storeDocument(document);
-    },
+    // Fallback response
+    return {
+      success: false,
+      documents: [doc],
+      count: 1,
+      message: `I found the document "${doc.filename}" but could not extract the requested content. Try asking for available sections first.`
+    };
+  },
     
     async getDocumentByName(name) {
       console.log(`Looking for document with name: ${name}`);

@@ -13,6 +13,7 @@
     "bson": "^6.2.0",
     "meteor-node-stubs": "^1.2.5",
     "mongodb": "^6.3.0",
+    "pdfjs-dist": "^2.14.305",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
