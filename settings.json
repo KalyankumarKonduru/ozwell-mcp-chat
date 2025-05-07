@@ -1,8 +1,11 @@
 {
-    "public": {
-      "ozwellApiUrl": "https://ai.bluehive.com/api"
-    },
-    "private": {
-      "ozwellApiKey": "BHSK-sandbox-FC5AWzqhZWwJvJqznpYYHVazREF0wKDL_BQL1vk_"
-    }
+  "public": {
+    "ozwellApiUrl": "https://ai.bluehive.com/api",
+    "enabledMcpTools": ["mongodb", "documents"]
+  },
+  "private": {
+    "ozwellApiKey": "BHSK-sandbox-FC5AWzqhZWwJvJqznpYYHVazREF0wKDL_BQL1vk_",
+    "mongodbMcpUrl": "mongodb://localhost:27017",
+    "mongodbMcpDbName": "ozwellMcpDb"
   }
+}

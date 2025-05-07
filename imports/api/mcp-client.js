@@ -3,18 +3,41 @@ import axios from 'axios';
 
 class MCPClient {
   constructor() {
-    this.apiUrl = Meteor.settings.public.ozwellApiUrl || 'https://ai.bluehive.com/api';
+    // Make sure these settings exist and are properly defined
+    if (!Meteor.settings || !Meteor.settings.public || !Meteor.settings.public.ozwellApiUrl) {
+      console.error('Missing required settings: ozwellApiUrl');
+    }
+    
+    if (!Meteor.settings || !Meteor.settings.private || !Meteor.settings.private.ozwellApiKey) {
+      console.error('Missing required settings: ozwellApiKey');
+    }
+    
+    this.apiUrl = Meteor.settings.public?.ozwellApiUrl || 'https://ai.bluehive.com/api';
     this.apiKey = Meteor.settings.private?.ozwellApiKey || '';
+    
+    // Validate that the API key and URL are set
+    if (!this.apiUrl) {
+      console.error('API URL is not set. Check your settings.json file.');
+    }
+    
+    if (!this.apiKey) {
+      console.error('API Key is not set. Check your settings.json file.');
+    }
   }
 
   async sendMessage(message, options = {}) {
+    if (!message) {
+      throw new Meteor.Error('message-required', 'Message text is required');
+    }
+    
     try {
       console.log(`MCPClient: Sending message "${message}"`);
       console.log('Options:', JSON.stringify(options));
       
-      let payload = {
+      // Create a local payload variable
+      const payload = {
         prompt: message,
-        systemMessage: "You are a helpful chatbot named Will."
+        systemMessage: options.systemMessage || "You are a helpful chatbot named Will."
       };
       
       // Handle customHistory parameter directly
@@ -36,7 +59,11 @@ class MCPClient {
       
       console.log('Sending payload to AI service:', JSON.stringify(payload));
 
-      const response = await axios.post(`${this.apiUrl}/v1/completion`, payload, {
+      // Make sure the API URL and endpoint are correct
+      const apiEndpoint = `${this.apiUrl}/v1/completion`;
+      console.log('API Endpoint:', apiEndpoint);
+
+      const response = await axios.post(apiEndpoint, payload, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
@@ -44,10 +71,12 @@ class MCPClient {
         timeout: 30000 // 30 seconds timeout
       });
       
+      console.log('API response status:', response.status);
+      
       if (response.data && response.data.choices && response.data.choices.length > 0) {
         console.log('Received AI response successfully');
         const responseText = response.data.choices[0].message.content;
-        console.log('AI Response text:', responseText);
+        console.log('AI Response text:', responseText.substring(0, 100) + '...');
         return {
           text: responseText,
           metadata: {
@@ -78,14 +107,24 @@ class MCPClient {
       // Development mode fallback
       if (Meteor.isDevelopment) {
         console.warn('Using simulated AI response in development mode');
-        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Create a simple response that acknowledges the message
         let responseText = `I'm responding to your message: "${message}"`;
         
+        // Use a local payload variable reference inside the development fallback
+        const fallbackPayload = {
+          prompt: message,
+          systemMessage: options.systemMessage || "You are a helpful chatbot named Will."
+        };
+        
         // Add context if history is provided
-        if (payload.history && payload.history.length > 0) {
+        if (options.customHistory && options.customHistory.length > 0) {
           responseText += `. Based on our conversation, I understand we're discussing ${message}.`;
+        }
+        
+        // Add MCP context if present
+        if (options.mcpContext) {
+          responseText += ` I found information related to your query: ${JSON.stringify(options.mcpContext)}`;
         }
         
         return {
@@ -102,4 +141,8 @@ class MCPClient {
   }
 }
 
+// Make sure the mcpClient instance is exported and initialized properly
 export const mcpClient = new MCPClient();
+
+// Export the class as well for testing or other uses
+export { MCPClient };

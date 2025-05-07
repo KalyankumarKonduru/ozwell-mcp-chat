@@ -8,7 +8,9 @@ const App = () => {
     <div className="app-container">
       <Header title="Ozwell MCP Chat" />
       <ChatWindow />
-      <MessageInput />
+      <div className="input-container">
+        <MessageInput />
+      </div>
     </div>
   );
 };
